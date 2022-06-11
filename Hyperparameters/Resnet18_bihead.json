@@ -1,0 +1,12 @@
+{
+    "DATASET_PATH":"/localdisk3/ramanav/TIL_Patches_v2",
+    "SAVE_DIR":"/localdisk3/ramanav/Results/TILdetection/Results",
+    "DEVICE_LIST":[4,5,6],
+    "TRAIN_BATCH_SIZE":512,
+    "TEST_BATCH_SIZE":512,
+    "LEARNINGRATE":0.00005,
+    "LAMBDA":0.005,
+    "EPOCHS":150,
+    "PATIENCE":15,
+    "ENCODER_NAME": "resnet18"
+}
