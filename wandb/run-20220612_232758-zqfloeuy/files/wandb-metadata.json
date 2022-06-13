@@ -1,0 +1,21 @@
+{
+    "os": "macOS-10.16-x86_64-i386-64bit",
+    "python": "3.8.11",
+    "heartbeatAt": "2022-06-13T03:28:00.285576",
+    "startedAt": "2022-06-13T03:27:58.785660",
+    "docker": null,
+    "cpu_count": 8,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "<python with no main file>",
+    "git": {
+        "remote": "https://github.com/Vishwesh4/TrainerCode.git",
+        "commit": "4c5fbae30a5bb6e68447de35cc51839de67222aa"
+    },
+    "email": "vishweshramanathan@gmail.com",
+    "root": "/Users/vishwesh/Projects/UOT/Research/TrainerCode",
+    "host": "Vishweshs-MacBook-Air.local",
+    "username": "vishwesh",
+    "executable": "/Users/vishwesh/anaconda3/envs/general/bin/python"
+}

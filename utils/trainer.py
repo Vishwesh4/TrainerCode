@@ -16,6 +16,9 @@ from pathlib import Path
 import torch
 
 class Trainer(RegistrantFactory):
+    #Global variable, mode should be one of either train/val/test
+    mode = "train"
+
     def __init__(self) -> None:
         #Objects dealing with important functionalities related to training/validation/testing/logging functionlities
         self.lossfun = lossfun
@@ -24,6 +27,7 @@ class Trainer(RegistrantFactory):
         self.model = model
         self.dataset = dataset
         self.logger = logger
+        self.metric = metric
 
         #Important Attributes
         self.epochs = epochs
@@ -55,18 +59,24 @@ class Trainer(RegistrantFactory):
         torch.cuda.empty_cache()
 
     def load_checkpoint(self):
+        """
+        Loads checkpoint for the model, optimizer, scheduler, epoch and best_metric
+        """
         checkpoint = torch.load(self.resume_loc, map_location=f'cuda:{self.device_list[0]}')
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         epoch = checkpoint['epoch']
-        metric = checkpoint['metric']
+        best_metric = checkpoint['metric']
         del checkpoint
         torch.cuda.empty_cache()
-        return epoch,metric
+        return epoch,best_metric
 
     @abc.abstractmethod
     def train(self):
+        """
+        Method for training loop
+        """
         ...
 
     @abc.abstractmethod
@@ -91,7 +101,10 @@ class Trainer(RegistrantFactory):
         
         for epoch in range(epoch_start,self.epochs):
             print("EPOCH: {}, METRIC: {}".format(epoch,best_metric_val))
+            #For logging purpose, we need to define the modes
+            Trainer.mode = "train"
             self.train()
+            Trainer.mode = "val"
             metric_val,test_loss = self.val()
             if self.is_save and (((epoch+1) % self.save_freq == 0) or (metric_val>best_metric_val)):
                 self.save_checkpoint(epoch,metric_val)

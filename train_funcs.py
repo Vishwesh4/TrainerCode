@@ -1,0 +1,88 @@
+import numpy as np
+
+import torch
+import torch.nn as nn
+import torchvision
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import albumentations
+from albumentations.pytorch import ToTensorV2
+from utils.dataloader import TILS_dataset_Bihead_Area
+from utils import model,dataset
+
+@model.Model.register(("resnetbihead",))
+class Resnet_bihead(model.Model):
+    def __init__(self, model_name,pretrained=False):
+        super(Resnet_bihead, self).__init__()
+        self.model = torchvision.models.__dict__[model_name](pretrained=pretrained)
+        
+        #Cell Head
+        self.cell = nn.Sequential(nn.Linear(self.model.fc.out_features,400),
+                                  nn.Linear(400,200),
+                                  nn.Linear(200,1),
+                                  torch.nn.Sigmoid())
+
+        #Tissue Head
+        self.tissue = nn.Sequential(nn.Linear(self.model.fc.out_features,400),
+                                    nn.Linear(400,200),
+                                    nn.Linear(200,1),
+                                    torch.nn.Sigmoid())
+
+    def forward(self, image,head="all"):
+        feat = self.model(image)
+        if head=="all":
+            cell_score = self.cell(feat)
+            tissue_score = self.tissue(feat)
+            return cell_score,tissue_score
+        elif head=="cell":
+            return self.cell(feat)
+        elif head=="tissue":
+            return self.tissue(feat)
+        else:
+            raise ValueError("Incorrect head given, choose out of all/cell/tissue")
+
+
+@dataset.Dataset.register(("tils",))
+class TILSDataset(dataset.Dataset):
+    def _process_data(self):
+        df1 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/TILcount.csv")
+        df2 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/3_tilcount.csv")
+        df3 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/4_tilcount.csv")
+        df1 = df1.sample(frac=0.5)
+        til = pd.concat([df1,df2,df3]).reset_index(drop=True)
+        # til = pd.read_csv(til_file)
+        # til["TILdensity"] = (til["TILS_1"]+til["TILS_2"]+til["TILS_3"])/(til["class_2"]+til["class_3"]+til["class_7"]+0.000001)
+        til["Rest"] = til["class_1"]+til["class_4"]+til["class_5"]+til["class_6"]+til["class_8"]
+        til["TILarea"] = til["TILS_1"] + til["TILS_2"] + til["TILS_3"]
+        til["total_area"] = til["Rest"] + til["class_2"] + til["class_3"] + til["class_7"]
+        til["metric"] = 1.2*(til["TILarea"]/til["total_area"])+1.2*(til["class_7"]/til["total_area"])+0.4*(((til["class_2"]+til["class_3"])/til["total_area"]))
+        til["sample"] = 0
+        til.loc[til["metric"]>0,"sample"] = 1
+        til.loc[til["metric"]>0.4,"sample"] = 2
+        til.loc[til["metric"]>0.7,"sample"] = 3
+        til["weight"] = 0
+        til.loc[til["sample"]==0,"weight"] = 1/(til["sample"]==0).sum()
+        til.loc[til["sample"]==1,"weight"] = 1.5/(til["sample"]==1).sum()
+        til.loc[til["sample"]==2,"weight"] = 1.5/(til["sample"]==2).sum()
+        til.loc[til["sample"]==3,"weight"] = 1/(til["sample"]==3).sum()
+
+        X = np.arange(0,len(til))
+        Y = til["sample"].values
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.1, random_state=42,stratify=Y)
+        train_dataset = til.iloc[X_train].copy().reset_index(drop=True)
+        test_dataset = til.iloc[X_test].copy().reset_index(drop=True)
+        return train_dataset,test_dataset
+
+    def get_loaders(self):
+        train_dataset,test_dataset = self._process_data()
+        #Weighted sampling
+        sample_weights = torch.from_numpy(train_dataset["weight"].values)
+        sampler = torch.utils.data.WeightedRandomSampler(sample_weights.type('torch.DoubleTensor'), len(sample_weights))
+
+        #Loading the images for train set
+        self.trainset = TILS_dataset_Bihead_Area(data_file=train_dataset,labels=[0,1,5,6],labels_tils=[1,2],path=self.path,transform=self.transform_train)
+        self.train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=self.train_batch_size, num_workers=8,sampler=sampler,pin_memory=True)
+        #Loading the images for test set
+        self.testset = TILS_dataset_Bihead_Area(data_file=test_dataset,labels=[0,1,5,6],labels_tils=[1,2],path=self.path,transform=self.transform_test)
+        self.test_loader = torch.utils.data.DataLoader(self.testset, batch_size=self.test_batch_size,shuffle=True, num_workers=8,pin_memory=True)

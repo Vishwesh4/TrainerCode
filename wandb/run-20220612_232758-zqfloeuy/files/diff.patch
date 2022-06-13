@@ -1,0 +1,231 @@
+diff --git a/utils/dataset.py b/utils/dataset.py
+index 08b59ba..8e920d7 100644
+--- a/utils/dataset.py
++++ b/utils/dataset.py
+@@ -5,17 +5,10 @@ import abc
+ from creationism.registration.factory import RegistrantFactory
+ from typing import Any, List, Optional, Union
+ 
+-import numpy as np
+-import pandas as pd
+-from sklearn.model_selection import train_test_split
+-import torch
+-import albumentations
+-from albumentations.pytorch import ToTensorV2
+-from .dataloader import TILS_dataset_Bihead_Area
+ 
+ class Dataset(RegistrantFactory):
+     """
+-    Main Dataset class which 
++    Main Dataset class
+     """
+     def __init__(
+         self,
+@@ -56,57 +49,3 @@ class Dataset(RegistrantFactory):
+     @property
+     def testset(self):
+         return self.testset
+-
+-
+-@Dataset.register(("tils",))
+-class TILSDataset(Dataset):
+-    def __init__(self,**kwargs) -> None:
+-        super().__init__(**kwargs)
+-    
+-    def _process_data(self):
+-        df1 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/TILcount.csv")
+-        df2 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/3_tilcount.csv")
+-        df3 = pd.read_csv("/localdisk3/ramanav/TIL_Patches_v2/4_tilcount.csv")
+-        df1 = df1.sample(frac=0.5)
+-        til = pd.concat([df1,df2,df3]).reset_index(drop=True)
+-        # til = pd.read_csv(til_file)
+-        # til["TILdensity"] = (til["TILS_1"]+til["TILS_2"]+til["TILS_3"])/(til["class_2"]+til["class_3"]+til["class_7"]+0.000001)
+-        til["Rest"] = til["class_1"]+til["class_4"]+til["class_5"]+til["class_6"]+til["class_8"]
+-        til["TILarea"] = til["TILS_1"] + til["TILS_2"] + til["TILS_3"]
+-        til["total_area"] = til["Rest"] + til["class_2"] + til["class_3"] + til["class_7"]
+-        til["metric"] = 1.2*(til["TILarea"]/til["total_area"])+1.2*(til["class_7"]/til["total_area"])+0.4*(((til["class_2"]+til["class_3"])/til["total_area"]))
+-        til["sample"] = 0
+-        til.loc[til["metric"]>0,"sample"] = 1
+-        til.loc[til["metric"]>0.4,"sample"] = 2
+-        til.loc[til["metric"]>0.7,"sample"] = 3
+-        til["weight"] = 0
+-        til.loc[til["sample"]==0,"weight"] = 1/(til["sample"]==0).sum()
+-        til.loc[til["sample"]==1,"weight"] = 1.5/(til["sample"]==1).sum()
+-        til.loc[til["sample"]==2,"weight"] = 1.5/(til["sample"]==2).sum()
+-        til.loc[til["sample"]==3,"weight"] = 1/(til["sample"]==3).sum()
+-
+-        X = np.arange(0,len(til))
+-        Y = til["sample"].values
+-        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.1, random_state=42,stratify=Y)
+-        train_dataset = til.iloc[X_train].copy().reset_index(drop=True)
+-        test_dataset = til.iloc[X_test].copy().reset_index(drop=True)
+-        return train_dataset,test_dataset
+-
+-    def get_loaders(self):
+-        train_dataset,test_dataset = self._process_data()
+-        #Weighted sampling
+-        sample_weights = torch.from_numpy(train_dataset["weight"].values)
+-        sampler = torch.utils.data.WeightedRandomSampler(sample_weights.type('torch.DoubleTensor'), len(sample_weights))
+-
+-        #Loading the images for train set
+-        self.trainset = TILS_dataset_Bihead_Area(data_file=train_dataset,labels=[0,1,5,6],labels_tils=[1,2],path=self.path,transform=self.transform_train)
+-        self.train_loader = torch.utils.data.DataLoader(self.trainset, batch_size=self.train_batch_size, num_workers=8,sampler=sampler,pin_memory=True)
+-        #Loading the images for test set
+-        self.testset = TILS_dataset_Bihead_Area(data_file=test_dataset,labels=[0,1,5,6],labels_tils=[1,2],path=self.path,transform=self.transform_test)
+-        self.test_loader = torch.utils.data.DataLoader(self.testset, batch_size=self.test_batch_size,shuffle=True, num_workers=8,pin_memory=True)
+-
+-###################################
+-#          Data Loaders           #
+-###################################  
+-# til_file = dataset_path / Path("TILcount_v2.csv")
+-
+diff --git a/utils/logger.py b/utils/logger.py
+index 6a6f906..8cdd356 100644
+--- a/utils/logger.py
++++ b/utils/logger.py
+@@ -1,17 +1,17 @@
+-import torchmetrics
+ import wandb
+ 
+ class Logger:
+     def __init__(self) -> None:
+-        pass
++        wandb.init(project=project_name,config=config_path,resume=resume,notes=notes)
++        wandb.run.name = name
+ 
+     def log(self,value,name=None):
+         pass
+ 
+-    def compute(self):
++    def track(self):
+         pass
+ 
+-    def store_variables(self):
++    def compute_mean(self):
+         pass
+ 
+     def reset(self):
+diff --git a/utils/model.py b/utils/model.py
+index 8022139..0e9c8bb 100644
+--- a/utils/model.py
++++ b/utils/model.py
+@@ -1,4 +1,5 @@
+ import abc
++from typing import List
+ from creationism.registration.factory import RegistrantFactory
+ 
+ import torch
+@@ -9,7 +10,11 @@ import torchvision
+ import warnings
+ 
+ class Model(RegistrantFactory,nn.Module):
+-    def load_model_weights(self, model_path,device):
++    """
++    Abstract class for torch models. Defines two methods for
++    loading model weights, converting model to dataparallel
++    """
++    def load_model_weights(self, model_path:str,device:torch.device):
+         """
+         Loads model weight
+         """
+@@ -26,39 +31,8 @@ class Model(RegistrantFactory,nn.Module):
+         model_dict.update(weights)
+         self.load_state_dict(model_dict)
+     
+-    def dataparallel(self,device_list):    
++    def dataparallel(self,device_list:List[int]):    
+         """
+         Converts the model to dataparallel to use multiple gpu
+         """
+         self = torch.nn.DataParallel(self,device_ids=device_list)
+-        
+-@Model.register(("resnetbihead",))
+-class Resnet_bihead(Model):
+-    def __init__(self, model_name,pretrained=False):
+-        super(Resnet_bihead, self).__init__()
+-        self.model = torchvision.models.__dict__[model_name](pretrained=pretrained)
+-        
+-        #Cell Head
+-        self.cell = nn.Sequential(nn.Linear(self.model.fc.out_features,400),
+-                                  nn.Linear(400,200),
+-                                  nn.Linear(200,1),
+-                                  torch.nn.Sigmoid())
+-
+-        #Tissue Head
+-        self.tissue = nn.Sequential(nn.Linear(self.model.fc.out_features,400),
+-                                    nn.Linear(400,200),
+-                                    nn.Linear(200,1),
+-                                    torch.nn.Sigmoid())
+-
+-    def forward(self, image,head="all"):
+-        feat = self.model(image)
+-        if head=="all":
+-            cell_score = self.cell(feat)
+-            tissue_score = self.tissue(feat)
+-            return cell_score,tissue_score
+-        elif head=="cell":
+-            return self.cell(feat)
+-        elif head=="tissue":
+-            return self.tissue(feat)
+-        else:
+-            raise ValueError("Incorrect head given, choose out of all/cell/tissue")
+diff --git a/utils/trainer.py b/utils/trainer.py
+index f27b453..4ad4435 100644
+--- a/utils/trainer.py
++++ b/utils/trainer.py
+@@ -16,6 +16,9 @@ from pathlib import Path
+ import torch
+ 
+ class Trainer(RegistrantFactory):
++    #Global variable, mode should be one of either train/val/test
++    mode = "train"
++
+     def __init__(self) -> None:
+         #Objects dealing with important functionalities related to training/validation/testing/logging functionlities
+         self.lossfun = lossfun
+@@ -24,6 +27,7 @@ class Trainer(RegistrantFactory):
+         self.model = model
+         self.dataset = dataset
+         self.logger = logger
++        self.metric = metric
+ 
+         #Important Attributes
+         self.epochs = epochs
+@@ -55,18 +59,24 @@ class Trainer(RegistrantFactory):
+         torch.cuda.empty_cache()
+ 
+     def load_checkpoint(self):
++        """
++        Loads checkpoint for the model, optimizer, scheduler, epoch and best_metric
++        """
+         checkpoint = torch.load(self.resume_loc, map_location=f'cuda:{self.device_list[0]}')
+         self.model.load_state_dict(checkpoint['model_state_dict'])
+         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+         epoch = checkpoint['epoch']
+-        metric = checkpoint['metric']
++        best_metric = checkpoint['metric']
+         del checkpoint
+         torch.cuda.empty_cache()
+-        return epoch,metric
++        return epoch,best_metric
+ 
+     @abc.abstractmethod
+     def train(self):
++        """
++        Method for training loop
++        """
+         ...
+ 
+     @abc.abstractmethod
+@@ -91,7 +101,10 @@ class Trainer(RegistrantFactory):
+         
+         for epoch in range(epoch_start,self.epochs):
+             print("EPOCH: {}, METRIC: {}".format(epoch,best_metric_val))
++            #For logging purpose, we need to define the modes
++            Trainer.mode = "train"
+             self.train()
++            Trainer.mode = "val"
+             metric_val,test_loss = self.val()
+             if self.is_save and (((epoch+1) % self.save_freq == 0) or (metric_val>best_metric_val)):
+                 self.save_checkpoint(epoch,metric_val)
