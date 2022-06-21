@@ -1,2 +1,5 @@
 wandb
 *.pyc
+miscell
+.gitignore
+__pycache__
