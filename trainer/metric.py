@@ -4,8 +4,7 @@ from typing import Dict, List, Union
 import torchmetrics
 import torch
 
-from modules.logger import Logger
-from .register import RegistrantFactory
+from . import Logger, RegistrantFactory
 
 
 class Metric(RegistrantFactory):
@@ -15,11 +14,14 @@ class Metric(RegistrantFactory):
     """
 
     SETTINGS = ["train", "val", "test"]
+    subclasses = {}
+    mode = "train"
 
     def __init__(
         self,
         logger: Logger,
         device: torch.device,
+        **kwargs
     ) -> None:
         """
         Wraps list of metric collections to make it perform like
@@ -31,12 +33,11 @@ class Metric(RegistrantFactory):
             metrics: Single or list of metriccollections
             logger: Logger object for logging purposes
         """
-        global mode
         self.metrics = self.get_metrics()
         self.logger = logger
 
         if not isinstance(self.metrics, list):
-            self.metrics = list(self.metrics)
+            self.metrics = [self.metrics]
 
         self.metrics_dict = {}
         for name in Metric.SETTINGS:
@@ -61,13 +62,13 @@ class Metric(RegistrantFactory):
         The results are stored in metrics_calc attributes
         """
         self.metrics_calc = []
-        for i in range(len(self.metrics_dict[mode])):
-            self.metrics_calc.append(self.metrics_dict[mode][i].compute())
+        for i in range(len(self.metrics_dict[self.mode])):
+            self.metrics_calc.append(self.metrics_dict[self.mode][i].compute())
         self.reset()
 
     def reset(self):
-        for i in range(len(self.metrics_dict[mode])):
-            self.metrics_dict[mode][i].reset()
+        for i in range(len(self.metrics_dict[self.mode])):
+            self.metrics_dict[self.mode][i].reset()
 
     def __call__(self, *args):
         """
@@ -77,15 +78,16 @@ class Metric(RegistrantFactory):
         for instance metric(tensor,tensor)
         """
         if not isinstance(args, list):
-            args = list(args)
+            args = [args]
 
-        assert len(self.metrics_dict[mode]) == len(
+        assert len(self.metrics_dict[self.mode]) == len(
             args
         ), "Number of arguments doesn't match , number of MetricCollection objects provided"
 
-        for i, argument in args:
-            self.metrics_dict[mode][i](*argument)
+        for i, argument in enumerate(args):
+            self.metrics_dict[self.mode][i](*argument)
 
+    @property
     def results(self) -> Dict:
         metric_results = {}
         for results in self.metrics_calc:
@@ -95,5 +97,5 @@ class Metric(RegistrantFactory):
         return metric_results
 
     def log(self):
-        results = self.results()
+        results = self.results
         self.logger.log(results)

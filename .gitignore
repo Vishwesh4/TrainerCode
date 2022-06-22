@@ -3,3 +3,5 @@ wandb
 miscell
 .gitignore
 __pycache__
+trainer.egg-info
+data

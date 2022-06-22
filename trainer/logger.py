@@ -1,7 +1,8 @@
 from typing import Dict, Union, Optional
+
 import wandb
 
-from .register import RegistrantFactory
+from . import RegistrantFactory
 
 
 class Logger(RegistrantFactory):
@@ -10,7 +11,7 @@ class Logger(RegistrantFactory):
     can track variables.
     This class is child of RegistrantFactory and can have subclasses
     """
-
+    subclasses = {}
     def __init__(
         self,
         project_name: str,
@@ -31,8 +32,8 @@ class Logger(RegistrantFactory):
         self.logging = wandb.init(
             project=project_name, config=configs, notes=notes, **kwargs
         )
-        self.logging.run.name = run_name
-        self.logging.run.save()
+        wandb.run.name = run_name
+        wandb.run.save()
         self.tracked_vars = {}
 
     def watch(self, **kwargs):
@@ -40,14 +41,14 @@ class Logger(RegistrantFactory):
         Method with arguments similar to wandb.watch
         Please refer to its documentation
         """
-        self.logging.watch(kwargs)
+        self.logging.watch(**kwargs)
 
-    def log(self, **kwargs):
+    def log(self, var:dict, **kwargs):
         """
         Method with arguments similar to wandb.log
         Please refer to its documentation
         """
-        self.logging.log(kwargs)
+        self.logging.log(var,**kwargs)
 
     def track(self, **kwargs):
         """
@@ -64,14 +65,18 @@ class Logger(RegistrantFactory):
         for key in dicts.keys():
             self.tracked_vars[key] = [dicts[key]]
 
-    def get_tracked(self, *args):
+    def get_tracked(self, key:str):
         """
         Gets the desired variables as dictinary, given keys
         """
-        subset_tracked = {
-            key: value for key, value in self.tracked_vars.items() if key in args
-        }
-        return subset_tracked
+        return self.tracked_vars[key]
 
     def reset(self):
         self.tracked_vars = {}
+    
+    @property
+    def get_logger(self):
+       """
+       Gets the logger object
+       """
+       return self.logging

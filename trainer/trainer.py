@@ -10,6 +10,7 @@ from typing import Union, Dict
 import time
 import inspect
 import random
+import importlib
 
 from pathlib import Path
 import torch
@@ -30,44 +31,63 @@ class Trainer:
         #Initializes for training, gets folders ready
         self.initialize_engine()
 
-        self.device = torch.device(f'cuda:{self.args["DEFAULT"]["gpu_devices"][0]}' if torch.cuda.is_available() else "cpu")
+        self.device = torch.device(f'cuda:{self.args["ENGINE"]["gpu_devices"][0]}' if torch.cuda.is_available() else "cpu")
         
         # Build classes
         self.dataset = Dataset.create(**self.args["DATASET"])
-        self.logger = Logger.create(**self.args["LOGGER"])
+        if self.args["LOGGER"]["subclass_name"] is None:
+            self.logger = Logger(**self.args["LOGGER"], configs = self.args)
+        else:
+            self.logger = Logger.create(**self.args["LOGGER"], configs = self.args)
         self.model = Model.create(**self.args["MODEL"])
-        self.metrics = Metric.create(**self.args["METRIC"])
+        self.metrics = Metric.create(**self.args["METRIC"], logger=self.logger, device=self.device)
         
-        self.loss_fun, self.optimizer, self.scheduler = self.get_ops(self.model, self.args["LOSS"], self.args["OPTIMIZER"], self.args["SCHEDULER"])
-        self.loss_fun = self.loss_fun.to(self.device)
+        #Build loss function, optimizer and scheduler for training operations
+        self.loss_fun = self._build_from_name(**self.args["LOSS"]).to(self.device)
+        self.optimizer = self._build_from_name(params = filter(lambda p: p.requires_grad, self.model.parameters()) ,**self.args["OPTIMIZER"])
+        self.scheduler = self._build_from_name(optimizer=self.optimizer,**self.args["SCHEDULER"])
+
+        #For resuming training from checkpoint
+        if self.args["ENGINE"]["resume_loc"] is not None:
+            self.load_checkpoint()
+        #For transfer learning
+        elif self.args["ENGINE"]["transfer_loc"] is not None:
+            self.model.load_model_weights(model_path = self.args["ENGINE"]["transfer_loc"], device = self.device)
         
+        #For switching to dataparallel
+        if self.args["ENGINE"]["use_dataparallel"]:
+            self.model = torch.nn.DataParallel(self.model, device_ids=self.args["ENGINE"]["gpu_devices"])
+
+        #Switch model to gpu
+        self.model.to(self.device)
+
     def initialize_engine(self):
         """
         Makes new directory for saving model if applicable and initializes seed
         """
         #Specifically for computecanada
-        if self.args["DEFAULT"]["location_mod"] is not None:
-            self.args["DATASET"]["path"] = str(Path(self.args["DEFAULT"]["location_mod"])/self.args["DATASET"]["path"])
+        if self.args["ENGINE"]["location_mod"] is not None:
+            self.args["DATASET"]["path"] = str(Path(self.args["ENGINE"]["location_mod"])/self.args["DATASET"]["path"])
 
-        if self.args["DEFAULT"]["save_loc"] is not None:
+        if self.args["ENGINE"]["save_loc"] is not None:
             self.is_save = True
-            parent_name = Path(self.args["DEFAULT"]["save_loc"])
+            parent_name = Path(self.args["ENGINE"]["save_loc"])
             folder_name = parent_name / Path("Results")
-            model_save = folder_name / Path(self.args["LOGGER"]["run_name"]) / "saved_models"
+            self.model_save = folder_name / Path(self.args["LOGGER"]["run_name"]) / "saved_models"
+
+            if not folder_name.is_dir():
+                os.mkdir(folder_name)
+                os.mkdir(self.model_save.parent)
+                os.mkdir(self.model_save)
+            elif not self.model_save.parent.is_dir():
+                os.mkdir(self.model_save.parent)
+                os.mkdir(self.model_save)
+            else:
+                pass
         else:
             self.is_save = False
 
-        if not folder_name.is_dir():
-            os.mkdir(folder_name)
-            os.mkdir(model_save.parent)
-            os.mkdir(model_save)
-        elif not model_save.parent.is_dir():
-            os.mkdir(model_save.parent)
-            os.mkdir(model_save)
-        else:
-            pass
-        
-        random_seed = self.args["DEFAULT"]["random_seed"]
+        random_seed = self.args["ENGINE"]["random_seed"]
         torch.manual_seed(random_seed)
         torch.cuda.manual_seed(random_seed)
         torch.cuda.manual_seed_all(random_seed) # if use multi-GPU
@@ -75,7 +95,7 @@ class Trainer:
         torch.backends.cudnn.benchmark = False
         np.random.seed(random_seed)
         random.seed(random_seed)
-
+         
     def save_checkpoint(self, epoch, metric):
         """
         Saves checkpoint for the model, optimizer, scheduler. Additionally saves the best metric score and epoch value
@@ -89,7 +109,7 @@ class Trainer:
                 "scheduler_state_dict": self.scheduler.state_dict(),
                 "metric": metric,
             },
-            self.args["DEFAULT"]["save_loc"]
+            self.model_save
             / Path(
                 "Checkpoint_{}_{:.2f}.pt".format(
                     time.strftime("%d%b%H_%M_%S", time.gmtime()), metric.item()
@@ -103,7 +123,7 @@ class Trainer:
         Loads checkpoint for the model, optimizer, scheduler, epoch and best_metric
         """
         checkpoint = torch.load(
-            self.args["DEFAULT"]["resume_loc"], map_location=f"cuda:{self.args['DEFAULT']['gpu_devices'][0]}"
+            self.args["ENGINE"]["resume_loc"], map_location= self.device
         )
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
@@ -114,17 +134,13 @@ class Trainer:
         torch.cuda.empty_cache()
         return epoch, best_metric
 
-    @abc.abstractmethod
-    def get_ops(self, loss_args:Dict, opt_args:Dict, schd_args:Dict):
+    @staticmethod
+    def _build_from_name(module_name:str,subclass_name:str,**kwargs):
         """
-        Method for specifying the loss function, learning rate schedular and
-        optimizer
-        You can pass like
-        loss = LossClass(**loss_args)
-        optimizer = OptimizerClass(**opt_args)
-        schedular = schedularClass(**schd_args)
+        Given module, builds object based on the given name and extra parameters
         """
-        ...
+        mymodule = importlib.import_module(module_name)
+        return getattr(mymodule,subclass_name)(**kwargs)
 
     @abc.abstractmethod
     def train(self, *args, **kwargs):
@@ -148,20 +164,21 @@ class Trainer:
         Run training and validation for the number of epochs provided
         """
         best_metric_val = -10000
-        if self.args["DEFAULT"]["resume_loc"] is not None:
+        if self.args["ENGINE"]["resume_loc"] is not None:
             epoch_start, best_metric_val = self.load_checkpoint()
         else:
             epoch_start = 0
 
-        for epoch in range(epoch_start, self.args["DEFAULT"]["epochs"]):
+        for epoch in range(epoch_start, self.args["ENGINE"]["epochs"]):
+            self.current_epoch = epoch
             print("EPOCH: {}, METRIC: {}".format(epoch, best_metric_val))
             # For logging purpose, we need to define the modes
-            Trainer.mode = "train"
+            self.metrics.mode = "train"
             self.train()
-            Trainer.mode = "val"
+            self.metrics.mode = "val"
             metric_val, val_loss = self.val()
             if self.is_save and (
-                ((epoch + 1) % self.args["DEFAULT"]["save_freq"] == 0) or (metric_val > best_metric_val)
+                ((epoch + 1) % self.args["ENGINE"]["save_freq"] == 0) or (metric_val > best_metric_val)
             ):
                 self.save_checkpoint(epoch, metric_val)
                 if metric_val > best_metric_val:
@@ -170,7 +187,5 @@ class Trainer:
                 self.scheduler.step(val_loss)
             else:
                 self.scheduler.step()
-            self.logger.log(
-                value=self.optimizer.param_groups[0]["lr"], name="Learning Rate"
-            )
+            self.logger.log({"Learning Rate": self.optimizer.param_groups[0]["lr"]})
         print("Training Done ...")

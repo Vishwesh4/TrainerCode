@@ -1,15 +1,13 @@
 import abc
 from typing import List
+import warnings
 
 import torch
 import torch._utils
-
 # import torch.nn.functional as F
 import torch.nn as nn
-import torchvision
-import warnings
 
-from .register import RegistrantFactory
+from . import RegistrantFactory
 
 
 class Model(RegistrantFactory, nn.Module):
@@ -17,7 +15,7 @@ class Model(RegistrantFactory, nn.Module):
     Abstract class for torch models. Defines two methods for
     loading model weights, converting model to dataparallel
     """
-
+    subclasses = {}
     def load_model_weights(self, model_path: str, device: torch.device):
         """
         Loads model weight
@@ -37,8 +35,3 @@ class Model(RegistrantFactory, nn.Module):
         model_dict.update(weights)
         self.load_state_dict(model_dict)
 
-    def dataparallel(self, device_list: List[int]):
-        """
-        Converts the model to dataparallel to use multiple gpu
-        """
-        self = torch.nn.DataParallel(self, device_ids=device_list)
