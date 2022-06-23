@@ -4,6 +4,7 @@ import warnings
 
 import torch
 import torch._utils
+
 # import torch.nn.functional as F
 import torch.nn as nn
 
@@ -14,9 +15,13 @@ class Model(RegistrantFactory, nn.Module):
     """
     Abstract class for torch models. Defines two methods for
     loading model weights, converting model to dataparallel
+    Methods:
+        load_model_weights: For loading model weights of the neural network
     """
+
     subclasses = {}
-    def load_model_weights(self, model_path: str, device: torch.device):
+
+    def load_model_weights(self, model_path: str, device: torch.device) -> None:
         """
         Loads model weight
         """
@@ -34,4 +39,3 @@ class Model(RegistrantFactory, nn.Module):
             warnings.warn("Warning... No weight could be loaded..")
         model_dict.update(weights)
         self.load_state_dict(model_dict)
-

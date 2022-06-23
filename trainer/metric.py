@@ -11,18 +11,16 @@ class Metric(RegistrantFactory):
     """
     Wrapper around torchmetrics MetricCollection to incorporate
     logging and multiple MetricCollection objects
+    
+    This class expects the user to provide with get_metrics method
+    
     """
 
     SETTINGS = ["train", "val", "test"]
     subclasses = {}
     mode = "train"
 
-    def __init__(
-        self,
-        logger: Logger,
-        device: torch.device,
-        **kwargs
-    ) -> None:
+    def __init__(self, logger: Logger, device: torch.device, **kwargs) -> None:
         """
         Wraps list of metric collections to make it perform like
         singular metric collections. Usefull for multioutput cases.
@@ -47,7 +45,9 @@ class Metric(RegistrantFactory):
             self.metrics_dict[name] = temp_metric
 
     @abc.abstractmethod
-    def get_metrics(self) -> Union[torchmetrics.MetricCollection, List[torchmetrics.MetricCollection]]:
+    def get_metrics(
+        self,
+    ) -> Union[torchmetrics.MetricCollection, List[torchmetrics.MetricCollection]]:
         """
         Define the metrics in this method
         This method is supposed to return metrics
@@ -55,8 +55,8 @@ class Metric(RegistrantFactory):
             metrics:  Union[torchmetrics.MetricCollection, List[torchmetrics.MetricCollection]]
         """
         pass
-    
-    def compute(self):
+
+    def compute(self) -> None:
         """
         Calculate the aggregate for the epoch and reset
         The results are stored in metrics_calc attributes
@@ -66,11 +66,14 @@ class Metric(RegistrantFactory):
             self.metrics_calc.append(self.metrics_dict[self.mode][i].compute())
         self.reset()
 
-    def reset(self):
+    def reset(self) -> None:
+        """
+        Resets all torchmetrics compose objects
+        """
         for i in range(len(self.metrics_dict[self.mode])):
             self.metrics_dict[self.mode][i].reset()
 
-    def __call__(self, *args):
+    def __call__(self, *args) -> None:
         """
         For multiple outputs, the argument should be passed as a
         list of tuples, for instance metric([(tensor,tensor),(tensor,tenosr)])
@@ -96,6 +99,9 @@ class Metric(RegistrantFactory):
                 metric_results[key] = results[key].cpu().numpy()
         return metric_results
 
-    def log(self):
+    def log(self) -> None:
+        """
+        Logs the metrics using logger object
+        """
         results = self.results
         self.logger.log(results)

@@ -21,5 +21,3 @@ config_path = "/Users/vishwesh/Projects/UOT/Research/TrainerCode/example/mnist.y
 
 mnist_trainer = utils.TrainEngine(config_pth=config_path)
 mnist_trainer.run()
-
-
