@@ -13,8 +13,8 @@ import sys
 
 from pathlib import Path
 import yaml
-import utils
 
+import utils
 import trainer
 
 config_path = "/Users/vishwesh/Projects/UOT/Research/TrainerCode/example/mnist.yml"
