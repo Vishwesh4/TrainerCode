@@ -194,7 +194,7 @@ class Trainer:
         ...
 
     @abc.abstractmethod
-    def val(self, *args, **kwargs) -> Union[float, float]:
+    def val(self, *args, **kwargs) -> Tuple[float, float]:
         """
         Method for validation loop.
         Returns:
