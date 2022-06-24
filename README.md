@@ -2,7 +2,7 @@
 This repository is for making the training code more modularized and easy to run and track multiple experiments, without much changes in the main code.
 
 ## Introduction
-This repo is under construction
+Yet to write documentation. Please look at `examples` directory meanwhile
 ## Getting Started
 ### Requirements
 ```
