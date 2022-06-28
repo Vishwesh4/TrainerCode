@@ -33,6 +33,7 @@ class Metric(RegistrantFactory):
         """
         self.metrics = self.get_metrics()
         self.logger = logger
+        self.kwargs = kwargs
 
         if not isinstance(self.metrics, list):
             self.metrics = [self.metrics]

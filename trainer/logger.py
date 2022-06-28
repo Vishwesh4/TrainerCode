@@ -35,6 +35,7 @@ class Logger(RegistrantFactory):
         self.logging = wandb.init(
             project=project_name, config=configs, notes=notes, **kwargs
         )
+        self.kwargs = kwargs
         wandb.run.name = run_name
         wandb.run.save()
         self.tracked_vars = {}

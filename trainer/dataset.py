@@ -26,6 +26,7 @@ class Dataset(RegistrantFactory):
         self.path = path
         self.train_batch_size = train_batch_size
         self.test_batch_size = test_batch_size
+        self.kwargs = kwargs
 
         # Empty Variables
         self.train_loader = None
