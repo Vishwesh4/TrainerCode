@@ -30,7 +30,7 @@ class Logger(RegistrantFactory):
             configs = Hyperparameters/settings used
             notes = Notes for the experiment
             run_name = Name of the experiment
-            **kwargs 
+            **kwargs
         """
         self.logging = wandb.init(
             project=project_name, config=configs, notes=notes, **kwargs
@@ -82,6 +82,6 @@ class Logger(RegistrantFactory):
     @property
     def get_logger(self) -> wandb.run:
         """
-       Gets the logger object
-       """
+        Gets the logger object
+        """
         return self.logging

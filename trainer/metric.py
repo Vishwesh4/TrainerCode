@@ -11,9 +11,9 @@ class Metric(RegistrantFactory):
     """
     Wrapper around torchmetrics MetricCollection to incorporate
     logging and multiple MetricCollection objects
-    
+
     This class expects the user to provide with get_metrics method
-    
+
     """
 
     SETTINGS = ["train", "val", "test"]

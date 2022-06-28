@@ -18,6 +18,7 @@ class Model(RegistrantFactory, nn.Module):
     Methods:
         load_model_weights: For loading model weights of the neural network
     """
+
     subclasses = {}
 
     def load_model_weights(self, model_path: str, device: torch.device) -> None:
@@ -25,10 +26,10 @@ class Model(RegistrantFactory, nn.Module):
         Loads model weight
         """
         state = torch.load(model_path, map_location=device)
-        if isinstance(state,dict):
+        if isinstance(state, dict):
             for keys in state.keys():
                 if "model" in keys:
-                    #Assumes the state dict has name model in its name
+                    # Assumes the state dict has name model in its name
                     state_dict = state[keys]
                     break
         else:

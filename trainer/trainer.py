@@ -22,12 +22,12 @@ from . import Dataset, Model, Metric, Logger
 
 class Trainer:
     """
-    Main class for training purposes. 
+    Main class for training purposes.
     For running training:
         trainer = Trainer(config_pth="path.yml")
         trainer.run()
     The class expects user to provide with train and val method along with a config file in yml format
-    
+
     Attributes:
         args: Dictionary from config file provided in yaml format
         device: torch device where data will reside
@@ -41,7 +41,7 @@ class Trainer:
     Methods:
         save_checkpoint: For saving all the states of model, optimizer, scheduler, metric and epoch
         load_checkpoint: For loading checkpoint
-        train: Abstract method to be specified by the user for training 
+        train: Abstract method to be specified by the user for training
         val: Abstract method to be specified by the user for validation
         run: For running the training loop based on the config file given
     """
@@ -49,9 +49,22 @@ class Trainer:
     # mode should be one of either train/val/test. Useful for self.metric attribute
     mode = "train"
 
-    def __init__(self, config_pth: str) -> None:
+    def __init__(self, config_pth: str, **kwargs) -> None:
+        """
+        Initializes the trainer with given configurations as mentioned in config path.
+        Additionally, kwargs can be used to edit some variables in the config path in cases of automatic
+        parameters
+
+        Parameters:
+            kwargs: Mention variables you want to change in the config file via code. Useful for variables
+                    given via argparse. Please ensure the name of kwarg variables matches key in the config
+                    file
+        """
         with open(config_pth, "r") as file:
             self.args = yaml.safe_load(file)
+
+        # Edit variables using kwargs
+        self._editargs(kwargs)
 
         # Initializes for training, gets folders ready
         self._initialize_engine()
@@ -100,6 +113,21 @@ class Trainer:
 
         # Switch model to gpu
         self.model.to(self.device)
+
+    def _editargs(self, new_values: dict) -> None:
+        """
+        Edit variables stored in self.args based on given new_values
+        """
+        module_keys = self.args.keys()
+        for key, value in new_values.items():
+            flag = 0
+            for module_key in module_keys:
+                if key in self.args[module_key].keys():
+                    self.args[module_key][key] = value
+                    flag = 1
+                    break
+            if flag == 0:
+                raise ValueError(f"{key} not found in the given config file")
 
     def _initialize_engine(self) -> None:
         """
