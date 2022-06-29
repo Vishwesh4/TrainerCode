@@ -36,7 +36,7 @@ import trainer
 
 #For registering to dataset module
 @trainer.Dataset.register("custom_name")
-class YOUR_CLASS:
+class YOUR_CLASS(trainer.Dataset):
     def get_transforms(self) -> Tuple[Any, Any]:
         #REQUIRED ABSTRACT METHOD, IMPLEMENT HERE
         return train_transform, test_transform
@@ -46,19 +46,19 @@ class YOUR_CLASS:
 
 #For registering to dataset module
 @trainer.Metric.register("custom_name")
-class YOUR_CLASS:
+class YOUR_CLASS(trainer.Metric):
     def get_metrics(self) -> Union[torchmetrics.MetricCollection, List[torchmetrics.MetricCollection]]:
         #REQUIRED ABSTRACT METHOD, IMPLEMENT HERE
         return metricfunction
 
 #For registering to dataset module
 @trainer.Model.register("custom_name")
-class YOUR_CLASS:
+class YOUR_CLASS(trainer.Model):
     pass
 
 #For registering to dataset module
 @trainer.Logger.register("custom_name")
-class YOUR_CLASS:
+class YOUR_CLASS(trainer.Logger):
     pass
 
 ```
