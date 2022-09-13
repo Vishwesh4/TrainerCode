@@ -78,8 +78,7 @@ class Trainer:
         # Build classes
         self.dataset = Dataset.create(**self.args["DATASET"])
         if self.args["LOGGER"]["subclass_name"] is None:
-#             self.logger = Logger(**self.args["LOGGER"], configs=self.args)
-            self.logger = Logger(**{k: d[k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name"])}
+            self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name"])},configs=self.args)
         else:
             self.logger = Logger.create(**self.args["LOGGER"], configs=self.args)
         self.model = Model.create(**self.args["MODEL"])
