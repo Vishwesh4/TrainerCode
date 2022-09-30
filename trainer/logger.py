@@ -17,6 +17,7 @@ class Logger(RegistrantFactory):
 
     def __init__(
         self,
+        use_wandb:bool,
         project_name: str,
         configs: Union[Dict, str, None],
         notes: str,
@@ -26,18 +27,24 @@ class Logger(RegistrantFactory):
         """
         Initilizes wandb and tracking variable attribute
         Parameters:
+            use_wandb = True/False for using wandb
             project_name = Name of main project
             configs = Hyperparameters/settings used
             notes = Notes for the experiment
             run_name = Name of the experiment
             **kwargs
         """
-        self.logging = wandb.init(
-            project=project_name, config=configs, notes=notes, **kwargs
-        )
-        self.kwargs = kwargs
-        wandb.run.name = run_name
-        wandb.run.save()
+        self.use_wandb = use_wandb
+        
+        if self.use_wandb:
+            self.logging = wandb.init(
+                project=project_name, config=configs, notes=notes, **kwargs
+            )
+            self.kwargs = kwargs
+            wandb.run.name = run_name
+            wandb.run.save()
+        else:
+            self.logging = None
         self.tracked_vars = {}
 
     def watch(self, **kwargs) -> None:
@@ -45,7 +52,10 @@ class Logger(RegistrantFactory):
         Method with arguments similar to wandb.watch
         Please refer to its documentation
         """
-        self.logging.watch(**kwargs)
+        if self.use_wandb:
+            self.logging.watch(**kwargs)
+        else:
+            pass
 
     def log(self, var: dict, **kwargs) -> None:
         """
@@ -54,8 +64,11 @@ class Logger(RegistrantFactory):
             var (Dict): Of form {"PLOT NAME": VARIABLE VALUE}
         Please refer to its documentation
         """
-        self.logging.log(var, **kwargs)
-
+        if self.use_wandb:
+            self.logging.log(var, **kwargs)
+        else:
+            pass
+        
     def track(self, **kwargs) -> None:
         """
         Tracks variables based on the name and value provided
