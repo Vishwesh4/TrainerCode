@@ -31,9 +31,9 @@ class Metric(RegistrantFactory):
             metrics: Single or list of metriccollections
             logger: Logger object for logging purposes
         """
-        self.metrics = self.get_metrics()
         self.logger = logger
         self.kwargs = kwargs
+        self.metrics = self.get_metrics()
 
         if not isinstance(self.metrics, list):
             self.metrics = [self.metrics]
