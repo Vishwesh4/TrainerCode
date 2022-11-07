@@ -4,6 +4,7 @@ and while shifting from experiment to experiment, dont have to change main code 
 Author: Vishwesh Ramanathan
 Created: June 3, 2022
 """
+import sys
 import os
 import abc
 from typing import Tuple, Union, Dict, Any
@@ -16,6 +17,7 @@ from pathlib import Path
 import torch
 import numpy as np
 import yaml
+import ruamel.yaml
 
 from . import Dataset, Model, Metric, Logger
 
@@ -65,6 +67,9 @@ class Trainer:
 
         # Edit variables using kwargs
         self._editargs(kwargs)
+
+        #Display variables
+        self._display(config_pth)
 
         # Initializes for training, gets folders ready
         self._initialize_engine()
@@ -129,6 +134,21 @@ class Trainer:
             if flag == 0:
                 raise ValueError(f"{key} not found in the given config file")
 
+    @staticmethod
+    def _display(file_path) -> None:
+        """
+        Display selected hyperparameters
+        """
+        print("-"*50)
+        print("Selected Hyperparameters")
+        print("-"*50)
+        yaml = ruamel.yaml.YAML()
+        yaml.preserve_quotes = True
+        with open(file_path, "r") as file:
+            data = yaml.load(file)
+        yaml.dump(data, sys.stdout)
+        print("-"*50)
+    
     def _initialize_engine(self) -> None:
         """
         Makes new directory for saving model if applicable and initializes seed
