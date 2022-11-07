@@ -24,5 +24,7 @@ class RegistrantFactory:
     def create(cls, subclass_name: str, **params):
         if subclass_name not in cls.subclasses:
             raise ValueError("Unknown subclass name {}".format(subclass_name))
+        print(f"For class: {cls.__name__}, Selected subclass: ({subclass_name}):{cls.subclasses[subclass_name]}")
+        print("-"*50)
 
         return cls.subclasses[subclass_name](**params)
