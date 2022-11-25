@@ -41,8 +41,10 @@ class Model(RegistrantFactory, nn.Module):
         model_dict = self.state_dict()
         weights = {k: v for k, v in state_dict.items() if k in model_dict}
         if len(state_dict.keys()) != len(model_dict.keys()):
-            warnings.warn("Warning... Some Weights could not be loaded")
-        if weights == {}:
-            warnings.warn("Warning... No weight could be loaded..")
+            not_loaded = [x for x in model_dict.keys() if not x in list(state_dict.keys())]
+            if weights == {}:
+                warnings.warn(f"Warning... No weight could be loaded..\n{not_loaded}")
+            else:
+                warnings.warn(f"Warning... Some Weights could not be loaded\n{not_loaded}")
         model_dict.update(weights)
         self.load_state_dict(model_dict)
