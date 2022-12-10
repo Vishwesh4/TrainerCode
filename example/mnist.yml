@@ -24,6 +24,8 @@ DATASET:
 
 LOGGER:
   subclass_name: mnist
+  use_wandb: True
+  watch_gradients: False
   project_name: trainer_code
   run_name: test1_mnist
   notes: testing trainer code with mnist

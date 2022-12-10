@@ -2,7 +2,7 @@
 This script is a wrapper around the data loader. The class defined returns data loaders
 """
 import abc
-from typing import Any, List, Optional, Union, Tuple
+from typing import Any, List, Optional, Union, Tuple, Dict
 
 from torch.utils.data import Dataset, DataLoader
 
@@ -42,6 +42,13 @@ class Dataset(RegistrantFactory):
             self.test_loader,
         ) = self.get_loaders()
 
+    def _inject_args(self,args:Dict) -> None:
+        """
+        Injects all the hyperparameters into class variable
+        """
+        self.system_params = args
+    
+    
     @abc.abstractmethod
     def get_transforms(self) -> Tuple[Any, Any]:
         """

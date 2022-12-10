@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = "0.0.2"
+VERSION = "0.0.3"
 DESCRIPTION = "Code for modularizing the training script"
 
 with open("README.md", "r") as fh:

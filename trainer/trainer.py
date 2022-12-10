@@ -51,25 +51,28 @@ class Trainer:
     # mode should be one of either train/val/test. Useful for self.metric attribute
     mode = "train"
 
-    def __init__(self, config_pth: str, **kwargs) -> None:
+    def __init__(self, config_pth: str, sweep_config: str = None, **kwargs) -> None:
         """
         Initializes the trainer with given configurations as mentioned in config path.
         Additionally, kwargs can be used to edit some variables in the config path in cases of automatic
         parameters
 
         Parameters:
+            config_path: The path to config file. It is assumed the file is in YAML format. For sweep mode,
+                         please provide path to the sweep configuration file
+            sweep: Set True if the user is running hyperparameter sweeps
             kwargs: Mention variables you want to change in the config file via code. Useful for variables
                     given via argparse. Please ensure the name of kwarg variables matches key in the config
                     file
         """
-        with open(config_pth, "r") as file:
+        #Determine if sweep is activated or not
+        sweep = sweep_config is not None
+        
+        with open(config_pth,"r") as file:
             self.args = yaml.safe_load(file)
 
         # Edit variables using kwargs
         self._editargs(kwargs)
-
-        #Display variables
-        self._display(config_pth)
 
         # Initializes for training, gets folders ready
         self._initialize_engine()
@@ -80,23 +83,41 @@ class Trainer:
             else "cpu"
         )
 
+        if sweep:
+            with open(sweep_config,"r") as file:
+                self.sweep_args = yaml.safe_load(file)
+            wandb_config = None
+        else:
+            self._display(config_pth)
+            wandb_config = self.args
+
         # Build classes
         if self.args["LOGGER"]["subclass_name"] is None:
-            self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name"])},configs=self.args)
+            self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name","watch_gradients"])},configs=wandb_config)
         else:
-            self.logger = Logger.create(**self.args["LOGGER"], configs=self.args)
-        self.dataset = Dataset.create(**self.args["DATASET"], system_params=self.args)
-        self.model = Model.create(**self.args["MODEL"], system_params=self.args)
+            self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["watch_gradients"])},configs=wandb_config)
+        
+        if sweep:
+            #After initialization of wandb run, edit the arguments based on sweep controller
+            self._sweepargs()
+        
+        self.dataset = Dataset.create(**self.args["DATASET"])
+        self.model = Model.create(**self.args["MODEL"])
         self.metrics = Metric.create(
             **self.args["METRIC"], logger=self.logger, device=self.device
         )
+
+        #Inject system parameters so that it could be used everywhere in the classes
+        self.dataset._inject_args(self.args)
+        self.model._inject_args(self.args)
+
 
         # Build loss function, optimizer and scheduler for training operations
         self.loss_fun = self._build_from_name(**self.args["LOSS"]).to(self.device)
         self.optimizer = self._build_from_name(
             params=filter(lambda p: p.requires_grad, self.model.parameters()),
             **self.args["OPTIMIZER"],
-        )
+        )   
         self.scheduler = self._build_from_name(
             optimizer=self.optimizer, **self.args["SCHEDULER"]
         )
@@ -133,6 +154,28 @@ class Trainer:
                     break
             if flag == 0:
                 raise ValueError(f"{key} not found in the given config file")
+
+    def _sweepargs(self) -> None:
+        """
+        Edit args based on the hyperparameters decided by the sweep controller which is present in the logger object
+        """
+        #go through all parameters and change values in self.args
+        for key in self.sweep_args["parameters"].keys():
+            dict_heirarchy = key.split(".")
+            #Hyperparameter val
+            arg_val = self.logger.get_logger.config[key]
+            print(key)
+            print(arg_val)
+            #Know only a very primitive way of returning multilevels
+            if len(dict_heirarchy)==1:
+                self.args[dict_heirarchy[0]] = arg_val
+            elif len(dict_heirarchy)==2:
+                self.args[dict_heirarchy[0]][dict_heirarchy[1]] = arg_val
+            elif len(dict_heirarchy)==3:
+                self.args[dict_heirarchy[0]][dict_heirarchy[1]][dict_heirarchy[2]] = arg_val
+            else:
+                raise ValueError("Too many levels in config file")
+        print(self.args)
 
     @staticmethod
     def _display(file_path) -> None:
@@ -255,6 +298,12 @@ class Trainer:
         """
         Run training and validation for the number of epochs provided
         """
+        if self.args["LOGGER"]["use_wandb"] and (self.args["LOGGER"]["watch_gradients"] is not None):
+            if self.args["LOGGER"]["watch_gradients"]:
+                self.logger.watch(models=self.model,
+                                log="all",
+                                log_graph=True
+                                )
         best_metric_val = -10000
         if self.args["ENGINE"]["resume_loc"] is not None:
             epoch_start, best_metric_val = self.load_checkpoint()
@@ -274,11 +323,25 @@ class Trainer:
                 or (metric_val > best_metric_val)
             ):
                 self.save_checkpoint(epoch, metric_val)
-                if metric_val > best_metric_val:
-                    best_metric_val = metric_val
+            
+            if metric_val > best_metric_val:
+                best_metric_val = metric_val
+
             if "metrics" in inspect.getfullargspec(self.scheduler.step).args:
                 self.scheduler.step(val_loss)
             else:
                 self.scheduler.step()
             self.logger.log({"Learning Rate": self.optimizer.param_groups[0]["lr"]})
         print("Training Done ...")
+
+    def sweep(self, sweep_counts:int, sweep_id = None,) -> str:
+        """
+        For running sweeps given sweep configuration. Returns sweep id which can be used for parallel agents
+        Paramters:
+            sweep_counts: Number of experiments
+            sweep_id: Incase of already initialized sweep experiments
+        """
+        if sweep_id is None:
+            sweep_id = self.logger.get_logger.sweep(sweep=self.sweep_args, project=self.args["LOGGER"]["project_name"])
+        
+        self.logger.get_logger.agent(sweep_id, function=self.run, count=sweep_counts)

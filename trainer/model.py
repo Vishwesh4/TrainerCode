@@ -1,5 +1,5 @@
 import abc
-from typing import List
+from typing import List, Dict
 import warnings
 
 import torch
@@ -46,5 +46,13 @@ class Model(RegistrantFactory, nn.Module):
                 warnings.warn(f"Warning... No weight could be loaded..\n{not_loaded}")
             else:
                 warnings.warn(f"Warning... Some Weights could not be loaded\n{not_loaded}")
+        else:
+            print("All weights successfully loaded")
         model_dict.update(weights)
         self.load_state_dict(model_dict)
+
+    def _inject_args(self,args:Dict) -> None:
+        """
+        Injects all the hyperparameters into class variable
+        """
+        self.system_params = args
