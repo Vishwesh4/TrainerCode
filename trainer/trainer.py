@@ -119,7 +119,7 @@ class Trainer:
             **self.args["OPTIMIZER"],
         )   
         self.scheduler = self._build_from_name(
-            optimizer=self.optimizer, **self.args["SCHEDULER"]
+            optimizer=self.optimizer, **{k: self.args["SCHEDULER"][k] for k in set(list(self.args["SCHEDULER"].keys())) - set(["epoch_wise"])}
         )
 
         # For resuming training from checkpoint
@@ -327,10 +327,11 @@ class Trainer:
             if metric_val > best_metric_val:
                 best_metric_val = metric_val
 
-            if "metrics" in inspect.getfullargspec(self.scheduler.step).args:
-                self.scheduler.step(val_loss)
-            else:
-                self.scheduler.step()
+            if self.args["SCHEDULER"]["epoch_wise"]:
+                if "metrics" in inspect.getfullargspec(self.scheduler.step).args:
+                    self.scheduler.step(val_loss)
+                else:
+                    self.scheduler.step()
             self.logger.log({"Learning Rate": self.optimizer.param_groups[0]["lr"]})
         print("Training Done ...")
 
