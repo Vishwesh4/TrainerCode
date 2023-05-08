@@ -95,7 +95,7 @@ class Trainer:
         if self.args["LOGGER"]["subclass_name"] is None:
             self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name","watch_gradients"])},configs=wandb_config)
         else:
-            self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["watch_gradients"])},configs=wandb_config)
+            self.logger = Logger.create(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["watch_gradients"])},configs=wandb_config)
         
         if sweep:
             #After initialization of wandb run, edit the arguments based on sweep controller
