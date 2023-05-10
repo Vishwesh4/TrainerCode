@@ -236,6 +236,10 @@ class Trainer:
         Saves checkpoint for the model, optimizer, scheduler. Additionally saves the best metric score and epoch value
         """
         print("Saving Checkpoint ...")
+        #Saving bug for cyclic lr
+        scheduler_statedict = self.scheduler.state_dict()
+        if "_scale_fn_ref" in scheduler_statedict.keys():
+            scheduler_statedict.pop("_scale_fn_ref")
         torch.save(
             {
                 "epoch": epoch,
