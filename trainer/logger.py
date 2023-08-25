@@ -42,6 +42,9 @@ class Logger(RegistrantFactory):
             )
             self.kwargs = kwargs
             wandb.run.name = run_name
+            if configs is not None:
+                if configs["ENGINE"]["random_seed"] is not None:
+                    wandb.run.name = run_name + "_seed_" + str(configs["ENGINE"]["random_seed"])        
             wandb.run.save()
         else:
             self.logging = None
