@@ -20,7 +20,9 @@ class Model(RegistrantFactory, nn.Module):
     """
 
     subclasses = {}
-
+    def __init__(self) -> None:
+        super().__init__()
+        
     def load_model_weights(self, model_path: str, device: torch.device) -> None:
         """
         Loads model weight
