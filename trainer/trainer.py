@@ -101,6 +101,7 @@ class Trainer:
             #After initialization of wandb run, edit the arguments based on sweep controller
             self._sweepargs()
         
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.args["ENGINE"]["use_amp"])
         self.dataset = Dataset.create(**self.args["DATASET"])
         self.model = Model.create(**self.args["MODEL"])
         self.metrics = Metric.create(

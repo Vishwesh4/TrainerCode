@@ -8,6 +8,7 @@ ENGINE: #For this section ensure none of the keys are missing
   use_dataparallel: False
   location_mod:
   random_seed: 2022
+  use_amp: False
   
 METRIC:
   subclass_name: mnist
