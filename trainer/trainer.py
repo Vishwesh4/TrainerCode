@@ -15,9 +15,13 @@ import importlib
 
 from pathlib import Path
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.multiprocessing as mp
 import numpy as np
 import yaml
 import ruamel.yaml
+from warmup_scheduler import GradualWarmupScheduler
 
 from . import Dataset, Model, Metric, Logger
 
@@ -51,7 +55,7 @@ class Trainer:
     # mode should be one of either train/val/test. Useful for self.metric attribute
     mode = "train"
 
-    def __init__(self, config_pth: str, sweep_config: str = None, **kwargs) -> None:
+    def __init__(self, config_pth: str, use_ddp: bool = False, rank: int = 0, world_size: int = 1, sweep_config: str = None, **kwargs) -> None:
         """
         Initializes the trainer with given configurations as mentioned in config path.
         Additionally, kwargs can be used to edit some variables in the config path in cases of automatic
@@ -60,6 +64,7 @@ class Trainer:
         Parameters:
             config_path: The path to config file. It is assumed the file is in YAML format. For sweep mode,
                          please provide path to the sweep configuration file
+            use_ddp: Set True if the user wants to use Distributed Data Parallel
             sweep: Set True if the user is running hyperparameter sweeps
             kwargs: Mention variables you want to change in the config file via code. Useful for variables
                     given via argparse. Please ensure the name of kwarg variables matches key in the config
@@ -68,6 +73,14 @@ class Trainer:
         #Determine if sweep is activated or not
         sweep = sweep_config is not None
         
+        self.use_ddp = use_ddp
+        self.rank = rank
+        self.world_size = world_size
+
+        #initialize for ddp
+        if self.use_ddp:
+            self.dist_setup()
+
         with open(config_pth,"r") as file:
             self.args = yaml.safe_load(file)
 
@@ -78,7 +91,7 @@ class Trainer:
         self._initialize_engine()
 
         self.device = torch.device(
-            f'cuda:{self.args["ENGINE"]["gpu_devices"][0]}'
+            f'cuda:{self.args["ENGINE"]["gpu_devices"][0 + self.rank]}'
             if torch.cuda.is_available()
             else "cpu"
         )
@@ -92,6 +105,10 @@ class Trainer:
             wandb_config = self.args
 
         # Build classes
+        #For logger
+        if self.rank!=0:
+            self.args["LOGGER"]["mode"]="disabled"
+        
         if self.args["LOGGER"]["subclass_name"] is None:
             self.logger = Logger(**{k: self.args["LOGGER"][k] for k in set(list(self.args["LOGGER"].keys())) - set(["subclass_name","watch_gradients"])},configs=wandb_config)
         else:
@@ -102,16 +119,26 @@ class Trainer:
             self._sweepargs()
         
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.args["ENGINE"]["use_amp"])
-        self.dataset = Dataset.create(**self.args["DATASET"])
+        self.dataset = Dataset.create(**self.args["DATASET"], use_ddp=use_ddp, rank=rank, world_size=world_size)
         self.model = Model.create(**self.args["MODEL"])
         self.metrics = Metric.create(
             **self.args["METRIC"], logger=self.logger, device=self.device
         )
 
+        # Switch model to gpu
+        self.model.to(self.device)
+
         #Inject system parameters so that it could be used everywhere in the classes
         self.dataset._inject_args(self.args)
         self.model._inject_args(self.args)
 
+        # For switching to dataparallel
+        if self.args["ENGINE"]["use_dataparallel"]:
+            self.model = torch.nn.DataParallel(
+                self.model, device_ids=self.args["ENGINE"]["gpu_devices"]
+            )
+        if use_ddp:
+            self.model = DDP(self.model,device_ids=[self.args["ENGINE"]["gpu_devices"][0 + self.rank]])
 
         # Build loss function, optimizer and scheduler for training operations
         self.loss_fun = self._build_from_name(**self.args["LOSS"]).to(self.device)
@@ -119,9 +146,13 @@ class Trainer:
             params=filter(lambda p: p.requires_grad, self.model.parameters()),
             **self.args["OPTIMIZER"],
         )   
-        self.scheduler = self._build_from_name(
-            optimizer=self.optimizer, **{k: self.args["SCHEDULER"][k] for k in set(list(self.args["SCHEDULER"].keys())) - set(["epoch_wise"])}
-        )
+        if self.args["SCHEDULER"]["module_name"]=="warmupscheduler":
+            scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, self.args["ENGINE"]["epochs"]-self.args["SCHEDULER"]["warmup_ego"])
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=self.args["SCHEDULER"]["warmup_factor"], total_epoch=self.args["SCHEDULER"]["warmup_ego"], after_scheduler=scheduler_cosine)
+        else:
+            self.scheduler = self._build_from_name(
+                optimizer=self.optimizer, **{k: self.args["SCHEDULER"][k] for k in set(list(self.args["SCHEDULER"].keys())) - set(["epoch_wise"])}
+            )
 
         # For resuming training from checkpoint
         if self.args["ENGINE"]["resume_loc"] is not None:
@@ -131,15 +162,6 @@ class Trainer:
             self.model.load_model_weights(
                 model_path=self.args["ENGINE"]["transfer_loc"], device=self.device
             )
-
-        # For switching to dataparallel
-        if self.args["ENGINE"]["use_dataparallel"]:
-            self.model = torch.nn.DataParallel(
-                self.model, device_ids=self.args["ENGINE"]["gpu_devices"]
-            )
-
-        # Switch model to gpu
-        self.model.to(self.device)
 
     def _editargs(self, new_values: dict) -> None:
         """
@@ -223,7 +245,7 @@ class Trainer:
         else:
             self.is_save = False
 
-        random_seed = self.args["ENGINE"]["random_seed"]
+        random_seed = self.args["ENGINE"]["random_seed"] + self.rank
         torch.manual_seed(random_seed)
         torch.cuda.manual_seed(random_seed)
         torch.cuda.manual_seed_all(random_seed)  # if use multi-GPU
@@ -239,12 +261,16 @@ class Trainer:
         print("Saving Checkpoint ...")
         #Saving bug for cyclic lr
         scheduler_statedict = self.scheduler.state_dict()
+        if self.use_ddp:
+            model_state_dict = self.model.module.state_dict()
+        else:
+            model_state_dict = self.model.state_dict()
         if "_scale_fn_ref" in scheduler_statedict.keys():
             scheduler_statedict.pop("_scale_fn_ref")
         torch.save(
             {
                 "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
+                "model_state_dict": model_state_dict,
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "scheduler_state_dict": scheduler_statedict,
                 "metric": metric,
@@ -274,6 +300,14 @@ class Trainer:
         torch.cuda.empty_cache()
         return epoch, best_metric
 
+    def dist_setup(self):
+        # Master address for distributed data parallel
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12355"
+
+        dist.init_process_group("nccl", rank=self.rank, world_size=self.world_size)
+        dist.barrier()
+    
     @staticmethod
     def _build_from_name(module_name: str, subclass_name: str, **kwargs) -> Any:
         """
@@ -323,12 +357,14 @@ class Trainer:
             self.train()
             self.metrics.mode = "val"
             metric_val, val_loss = self.val()
-            if self.is_save and (
+            if self.is_save and (self.rank==0) and (
                 ((epoch + 1) % self.args["ENGINE"]["save_freq"] == 0)
                 or (metric_val > best_metric_val)
             ):
                 self.save_checkpoint(epoch, metric_val)
-            
+                if self.use_ddp:
+                    dist.barrier()
+
             if metric_val > best_metric_val:
                 best_metric_val = metric_val
 
@@ -338,6 +374,8 @@ class Trainer:
                 else:
                     self.scheduler.step()
             self.logger.log({"Learning Rate": self.optimizer.param_groups[0]["lr"]})
+        if self.use_ddp:
+            dist.destroy_process_group()
         print("Training Done ...")
 
     def sweep(self, sweep_counts:int, sweep_id = None,) -> str:

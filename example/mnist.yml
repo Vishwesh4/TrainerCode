@@ -49,4 +49,8 @@ SCHEDULER:
   step_size: 1
   gamma: 0.7
 
-
+# SCHEDULER:
+#   module_name: warmupscheduler
+#   epoch_wise: true
+#   warmup_factor: 10
+#   warmup_ego: 10

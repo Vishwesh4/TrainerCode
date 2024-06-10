@@ -38,7 +38,7 @@ class Logger(RegistrantFactory):
         
         if self.use_wandb:
             self.logging = wandb.init(
-                project=project_name, config=configs, notes=notes, **kwargs
+                project=project_name, config=configs, notes=notes, settings=wandb.Settings(start_method="fork"), **kwargs
             )
             self.kwargs = kwargs
             wandb.run.name = run_name
